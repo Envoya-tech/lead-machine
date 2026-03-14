@@ -107,9 +107,29 @@
 
   @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
 
+  .progress-wrap {
+    margin-top: 24px;
+    background: #334155;
+    border-radius: 99px;
+    height: 6px;
+    overflow: hidden;
+  }
+  .progress-bar {
+    height: 100%;
+    border-radius: 99px;
+    background: linear-gradient(90deg, #6366F1, #818cf8);
+    width: 0%;
+    transition: width 0.8s ease;
+  }
+  .progress-meta {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 8px;
+    font-size: 12px;
+    color: #64748b;
+  }
   .elapsed {
-    margin-top: 20px;
-    font-size: 13px;
+    font-size: 12px;
     color: #64748b;
   }
   .footer {
@@ -184,13 +204,34 @@
     </li>
   </ul>
 
-  <div class="elapsed" id="elapsed"></div>
+  <div class="progress-wrap">
+    <div class="progress-bar" id="progress-bar"></div>
+  </div>
+  <div class="progress-meta">
+    <span id="progress-label">Starting…</span>
+    <span class="elapsed" id="elapsed"></span>
+  </div>
 </div>
 
 <div class="footer" id="footer">Lead Machine will open automatically when ready.</div>
 
 <script>
 const STEP_ORDER = ['s-homebrew','s-python','s-postgres','s-database','s-deps','s-services','s-ready'];
+const STEP_PROGRESS = [5, 20, 38, 54, 68, 82, 94];
+const STEP_LABELS   = [
+  'Installing system dependencies…',
+  'Setting up Python environment…',
+  'Installing database…',
+  'Creating database…',
+  'Installing application…',
+  'Starting services…',
+  'Almost ready…',
+];
+
+function setProgress(pct, label) {
+  document.getElementById('progress-bar').style.width = pct + '%';
+  document.getElementById('progress-label').textContent = label;
+}
 
 function markSteps(currentId) {
   const idx = STEP_ORDER.indexOf(currentId);
@@ -201,6 +242,7 @@ function markSteps(currentId) {
     if (i < idx)  el.classList.add('done');
     if (i === idx) el.classList.add('active');
   });
+  if (idx >= 0) setProgress(STEP_PROGRESS[idx], STEP_LABELS[idx]);
 }
 
 // Elapsed timer
@@ -218,9 +260,10 @@ async function checkBackend() {
     const r = await fetch('http://localhost:8000/health', { signal: AbortSignal.timeout(3000) });
     if (r.ok) {
       markSteps('s-ready');
+      setProgress(100, 'Opening Lead Machine…');
+      document.getElementById('progress-bar').style.background = 'linear-gradient(90deg,#22c55e,#4ade80)';
       document.querySelector('h2').textContent = '✓ Ready!';
       document.getElementById('main-sub').textContent = 'Opening Lead Machine now…';
-      document.getElementById('spinner').style.borderTopColor = '#22c55e';
       document.getElementById('spinner').style.borderColor = '#14532d';
       document.getElementById('spinner').style.borderTopColor = '#22c55e';
       document.getElementById('footer').textContent = '';
