@@ -15,6 +15,9 @@ fi
 
 USER_HOME=$(eval echo "~$CONSOLE_USER")
 
+# ── Hand ownership of install dir to the console user ────────────────────────
+chown -R "$CONSOLE_USER" "$INSTALL_DIR" 2>/dev/null || true
+
 # ── Pre-create log file owned by the console user (not root) ─────────────────
 LOG_DIR="$USER_HOME/Library/Logs/LeadMachine"
 sudo -u "$CONSOLE_USER" mkdir -p "$LOG_DIR"
