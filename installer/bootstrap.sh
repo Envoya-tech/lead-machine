@@ -35,22 +35,26 @@ fi
 
 state "installing_python"
 
-# ── Python 3.11+ ──────────────────────────────────────────────────────────────
+# ── Python 3.9+ (prefer newer, but accept any 3.9+) ─────────────────────────
 PYTHON=""
-for _p in python3.13 python3.12 python3.11; do
+for _p in \
+    python3.14 python3.13 python3.12 python3.11 python3.10 python3.9 \
+    /opt/homebrew/bin/python3 /usr/local/bin/python3 /usr/bin/python3 python3; do
     if command -v "$_p" &>/dev/null; then
-        if "$_p" -c "import sys; sys.exit(0 if sys.version_info>=(3,11) else 1)" 2>/dev/null; then
-            PYTHON="$_p"; break
+        if "$_p" -c "import sys; sys.exit(0 if sys.version_info>=(3,9) else 1)" 2>/dev/null; then
+            PYTHON=$(command -v "$_p")
+            break
         fi
     fi
 done
 if [ -z "$PYTHON" ]; then
-    log "Installing Python 3.11 via Homebrew..."
+    log "No suitable Python found — installing Python 3.11 via Homebrew..."
     brew install python@3.11 >> "$LOG" 2>&1
     PYTHON="$(brew --prefix python@3.11)/bin/python3.11"
-    log "Python installed."
+    log "Python installed via Homebrew."
+else
+    log "Using existing Python: $($PYTHON --version 2>&1) at $PYTHON"
 fi
-log "Using Python: $($PYTHON --version 2>&1)"
 
 state "installing_postgres"
 # SQLite — no PostgreSQL install needed
