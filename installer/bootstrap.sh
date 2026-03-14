@@ -5,8 +5,14 @@
 set -e
 
 INSTALL_DIR="/Applications/LeadMachine"
-LOG="/tmp/leadmachine-install.log"
-STATE_FILE="/tmp/leadmachine-install-state"
+# LOG may be passed in by postinstall (already owned by user).
+# Fall back to user Library logs, then TMPDIR — never /tmp directly (root conflict).
+if [ -z "$LOG" ]; then
+    LOG_DIR="$HOME/Library/Logs/LeadMachine"
+    mkdir -p "$LOG_DIR" 2>/dev/null || true
+    LOG="$LOG_DIR/install.log"
+fi
+STATE_FILE="${TMPDIR:-/tmp}/leadmachine-install-state"
 
 log() { echo "[$(date '+%H:%M:%S')] $*" >> "$LOG"; }
 state() { echo "$1" > "$STATE_FILE"; log "STATE: $1"; heartbeat "$1"; }
