@@ -1,0 +1,6 @@
+# Lead Machine — Installer requirements
+#
+# The wizard (wizard.py) uses Python stdlib only and requires NO extra packages.
+# This file is intentionally empty and kept for packaging consistency.
+#
+# If you extend the wizard with third-party deps, list them here.

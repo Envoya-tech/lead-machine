@@ -1,0 +1,37 @@
+version: "3.9"
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: production
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: "sqlite+aiosqlite:///./data/leadmachine.db"
+      SECRET_KEY: "${SECRET_KEY:-change-me-in-production}"
+      FIRST_RUN: "${FIRST_RUN:-true}"
+    volumes:
+      - ./data:/app/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 6
+      start_period: 20s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: production
+      args:
+        VITE_API_URL: ""   # empty = same-origin API calls (nginx proxies /api)
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${PORT:-80}:80"
+
+volumes: {}

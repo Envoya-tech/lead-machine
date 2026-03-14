@@ -1,0 +1,35 @@
+# Lead Machine — Production Caddyfile
+# Replace {DOMAIN} with actual hostname (e.g. lead.local, tailscale hostname, or real domain)
+# Caddy auto-provisions TLS for real domains; uses self-signed for local/IP
+
+:443 {
+    # Serve React frontend (built dist/)
+    root * /Users/lennart/projects/lead-machine/frontend/dist
+    encode gzip
+
+    # Proxy API calls to FastAPI backend
+    handle /api/* {
+        reverse_proxy localhost:8000
+    }
+
+    # Everything else → SPA index.html
+    handle {
+        try_files {path} /index.html
+        file_server
+    }
+
+    # Security headers
+    header {
+        X-Frame-Options SAMEORIGIN
+        X-Content-Type-Options nosniff
+        X-XSS-Protection "1; mode=block"
+        Referrer-Policy strict-origin-when-cross-origin
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        -Server
+    }
+}
+
+# HTTP → HTTPS redirect
+:80 {
+    redir https://{host}{uri} permanent
+}

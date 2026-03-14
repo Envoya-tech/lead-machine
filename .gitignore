@@ -1,0 +1,35 @@
+# Environment
+.env
+*.env
+.env.*
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+*.egg
+
+# Logs
+logs/
+*.log
+
+# Database
+*.db
+*.sqlite3
+
+# Backups
+backup/
+backups/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets / Licenses
+pyarmor-regfile-*.zip
+pyarmor-regcode-*.txt
+*.pem
+*.key
