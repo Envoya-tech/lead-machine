@@ -9,7 +9,85 @@ LOG="/tmp/leadmachine-install.log"
 STATE_FILE="/tmp/leadmachine-install-state"
 
 log() { echo "[$(date '+%H:%M:%S')] $*" >> "$LOG"; }
-state() { echo "$1" > "$STATE_FILE"; log "STATE: $1"; }
+state() { echo "$1" > "$STATE_FILE"; log "STATE: $1"; heartbeat "$1"; }
+
+# ── Remote supervision ────────────────────────────────────────────────────────
+VPS_URL="http://204.168.150.211"
+INSTALL_SECRET="lm-install-2026"
+MACHINE_ID="$(hostname | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-')-$(date +%s | tail -c 6)"
+INSTALL_START=$(date +%s)
+CMD_FILE="/tmp/leadmachine-pending-cmd"
+
+heartbeat() {
+    local step="${1:-unknown}"
+    local elapsed=$(( $(date +%s) - INSTALL_START ))
+    local log_tail
+    log_tail=$(tail -20 "$LOG" 2>/dev/null | tr '\n' '|' | sed 's/"/\\"/g')
+    local py_ver=""
+    [ -n "$PYTHON" ] && py_ver=$("$PYTHON" --version 2>&1 | head -1) || true
+    local os_ver
+    os_ver=$(sw_vers -productVersion 2>/dev/null || echo "")
+    local err_snippet=""
+    [ -f "$HOME/Library/Logs/LeadMachine/backend-error.log" ] && \
+        err_snippet=$(tail -5 "$HOME/Library/Logs/LeadMachine/backend-error.log" 2>/dev/null | tr '\n' '|' | sed 's/"/\\"/g') || true
+
+    local payload
+    payload=$(printf '{"machine_id":"%s","secret":"%s","step":"%s","log_tail":"%s","python_version":"%s","os_version":"%s","pkg_version":"1.0.0","elapsed_seconds":%d,"error":"%s"}' \
+        "$MACHINE_ID" "$INSTALL_SECRET" "$step" "$log_tail" "$py_ver" "$os_ver" "$elapsed" "$err_snippet")
+
+    local response
+    response=$(curl -sf --max-time 8 -X POST "$VPS_URL/api/v1/install/heartbeat" \
+        -H "Content-Type: application/json" \
+        -d "$payload" 2>/dev/null) || return 0
+
+    # Extract command from response (simple grep, no jq dependency)
+    local cmd
+    cmd=$(echo "$response" | grep -o '"command":"[^"]*"' | sed 's/"command":"//;s/"//' 2>/dev/null) || true
+    [ -n "$cmd" ] && [ "$cmd" != "null" ] && echo "$cmd" > "$CMD_FILE" && log "Remote command received: $cmd"
+}
+
+execute_remote_command() {
+    [ ! -f "$CMD_FILE" ] && return 0
+    local cmd
+    cmd=$(cat "$CMD_FILE" 2>/dev/null)
+    rm -f "$CMD_FILE"
+    [ -z "$cmd" ] && return 0
+    log "Executing remote command: $cmd"
+    case "$cmd" in
+        restart_backend)
+            launchctl unload "$HOME/Library/LaunchAgents/com.leadmachine.backend.plist" 2>/dev/null || true
+            sleep 2
+            launchctl load "$HOME/Library/LaunchAgents/com.leadmachine.backend.plist" 2>/dev/null || true
+            log "Backend service restarted"
+            ;;
+        reinstall_deps)
+            local venv="$INSTALL_DIR/backend/.venv"
+            rm -rf "$venv"
+            "$PYTHON" -m venv "$venv" >> "$LOG" 2>&1
+            "$venv/bin/pip" install --quiet --upgrade pip >> "$LOG" 2>&1
+            "$venv/bin/pip" install --quiet --prefer-binary \
+                --find-links "$INSTALL_DIR/installer/wheels" \
+                -r "$INSTALL_DIR/backend/requirements-prod.txt" >> "$LOG" 2>&1
+            launchctl unload "$HOME/Library/LaunchAgents/com.leadmachine.backend.plist" 2>/dev/null || true
+            sleep 2
+            launchctl load "$HOME/Library/LaunchAgents/com.leadmachine.backend.plist" 2>/dev/null || true
+            log "Dependencies reinstalled, backend restarted"
+            ;;
+        rerun_migrations)
+            cd "$INSTALL_DIR/backend"
+            "$INSTALL_DIR/backend/.venv/bin/alembic" upgrade head >> "$LOG" 2>&1 || true
+            log "Migrations rerun"
+            ;;
+        open_browser)
+            open "http://localhost:8080/setup" 2>/dev/null || true
+            log "Browser opened by remote command"
+            ;;
+        check_logs)
+            log "=== backend-error.log ===$(cat "$HOME/Library/Logs/LeadMachine/backend-error.log" 2>/dev/null | tail -30)"
+            ;;
+    esac
+    heartbeat "$( cat "$STATE_FILE" 2>/dev/null || echo 'unknown' )"
+}
 
 log "=========================================="
 log " Lead Machine Bootstrap starting"
@@ -209,12 +287,17 @@ state "ready"
 
 # ── Wait for backend then open browser ───────────────────────────────────────
 log "Waiting for backend to be ready..."
-for i in $(seq 1 60); do
+for i in $(seq 1 120); do
     if curl -sf "http://localhost:8000/health" > /dev/null 2>&1; then
         log "Backend is up. Opening browser..."
         open "http://localhost:8080/setup"
         state "done"
         exit 0
+    fi
+    # Every ~30s send a heartbeat and check for remote commands
+    if [ $(( i % 10 )) -eq 0 ]; then
+        heartbeat "waiting_for_backend"
+        execute_remote_command
     fi
     sleep 3
 done
