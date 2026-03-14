@@ -137,6 +137,38 @@
     font-size: 13px;
     color: #475569;
   }
+  .error-box {
+    display: none;
+    margin-top: 20px;
+    background: #450a0a;
+    border: 1px solid #dc2626;
+    border-radius: 12px;
+    padding: 16px 20px;
+    text-align: left;
+  }
+  .error-box h3 {
+    font-size: 15px;
+    font-weight: 600;
+    color: #fca5a5;
+    margin-bottom: 8px;
+  }
+  .error-box p {
+    font-size: 13px;
+    color: #fca5a5;
+    line-height: 1.6;
+    margin-bottom: 8px;
+  }
+  .error-box code {
+    display: block;
+    background: #1c0707;
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 12px;
+    color: #f87171;
+    font-family: monospace;
+    word-break: break-all;
+    margin-top: 6px;
+  }
 </style>
 </head>
 <body>
@@ -210,6 +242,17 @@
   <div class="progress-meta">
     <span id="progress-label">Starting…</span>
     <span class="elapsed" id="elapsed"></span>
+  </div>
+
+  <div class="error-box" id="error-box">
+    <h3>⚠ Taking longer than expected</h3>
+    <p>The backend service didn't start in time. Open Terminal and check the error log:</p>
+    <code>cat ~/Library/Logs/LeadMachine/backend-error.log</code>
+    <p style="margin-top:10px">Or check the full install log:</p>
+    <code>tail -50 /tmp/leadmachine-install.log</code>
+    <p style="margin-top:10px; font-size:12px; color:#ef4444">
+      Common fix: reinstall the package, then wait a few minutes before checking this page again.
+    </p>
   </div>
 </div>
 
@@ -288,6 +331,13 @@ function animateByTime() {
     markSteps(STEP_ORDER[Math.min(stepIdx, STEP_ORDER.length - 2)]);
   }
 }
+
+// Show error box after 8 minutes if backend still not up
+const ERROR_TIMEOUT_MS = 8 * 60 * 1000;
+setTimeout(() => {
+  document.getElementById('error-box').style.display = 'block';
+  document.getElementById('progress-label').textContent = 'Still waiting…';
+}, ERROR_TIMEOUT_MS);
 
 // Start
 markSteps(STEP_ORDER[0]);
