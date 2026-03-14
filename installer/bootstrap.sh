@@ -218,11 +218,24 @@ log ".env written."
 
 state "running_migrations"
 
-# ── Run Alembic migrations ────────────────────────────────────────────────────
-if [ -f "$INSTALL_DIR/backend/alembic.ini" ]; then
-    log "Running database migrations..."
-    cd "$INSTALL_DIR/backend"
+# ── Run migrations or create_all ─────────────────────────────────────────────
+cd "$INSTALL_DIR/backend"
+if [ -f "alembic.ini" ] && [ -d "alembic" ]; then
+    log "Running Alembic migrations..."
     "$VENV/bin/alembic" upgrade head >> "$LOG" 2>&1 || log "Migration warning (non-fatal)"
+else
+    log "alembic.ini not found — using SQLAlchemy create_all..."
+    "$VENV/bin/python" -c "
+import asyncio, sys
+sys.path.insert(0, '.')
+from app.db.base import Base
+from app.db.session import engine
+import app.models
+async def run():
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+asyncio.run(run())
+" >> "$LOG" 2>&1 || log "DB init warning (non-fatal)"
 fi
 
 state "starting_services"

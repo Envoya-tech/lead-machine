@@ -48,10 +48,27 @@ ACCESS_TOKEN_EXPIRE_MINUTES=10080
 EOF
 fi
 
-# Run migrations
+# Run migrations (or create_all if alembic not available)
 echo "  Setting up database..."
 cd "$BACKEND"
-.venv/bin/alembic upgrade head 2>&1 | tail -3
+mkdir -p data
+if [ -f "alembic.ini" ] && [ -d "alembic" ]; then
+    .venv/bin/alembic upgrade head 2>&1 | tail -3
+else
+    echo "  (alembic not found — using create_all)"
+    .venv/bin/python -c "
+import asyncio, sys
+sys.path.insert(0, '.')
+from app.db.base import Base
+from app.db.session import engine
+import app.models
+async def run(): 
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+asyncio.run(run())
+print('Database tables created.')
+" 2>&1 | tail -5
+fi
 
 # Install launchd services
 echo "  Installing services..."
