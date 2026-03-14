@@ -149,30 +149,30 @@ log "SQLite database will be created on first run."
 
 state "installing_dependencies"
 
-# ── Python venv + pip install (offline from bundled wheels) ──────────────────
+# ── Python venv — use pre-built if valid, otherwise build from wheels ─────────
 VENV="$INSTALL_DIR/backend/.venv"
 WHEELS_DIR="$INSTALL_DIR/installer/wheels"
 
-if [ ! -d "$VENV" ]; then
-    log "Creating virtual environment..."
-    "$PYTHON" -m venv "$VENV" >> "$LOG" 2>&1
-fi
-
-log "Installing Python dependencies..."
-"$VENV/bin/pip" install --quiet --upgrade pip >> "$LOG" 2>&1
-
-if [ -d "$WHEELS_DIR" ] && [ "$(ls -A "$WHEELS_DIR" 2>/dev/null)" ]; then
-    log "Installing from bundled wheels (offline)..."
-    "$VENV/bin/pip" install --quiet \
-        --find-links "$WHEELS_DIR" \
-        --prefer-binary \
-        -r "$INSTALL_DIR/backend/requirements-prod.txt" >> "$LOG" 2>&1
+if "$VENV/bin/python" -c "import uvicorn, fastapi, sqlalchemy" >> "$LOG" 2>&1; then
+    log "Pre-built venv is valid — skipping pip install."
 else
-    log "No bundled wheels found — downloading from PyPI..."
-    "$VENV/bin/pip" install --quiet \
-        -r "$INSTALL_DIR/backend/requirements-prod.txt" >> "$LOG" 2>&1
+    log "Pre-built venv invalid or missing — building from bundled wheels..."
+    rm -rf "$VENV"
+    "$PYTHON" -m venv "$VENV" >> "$LOG" 2>&1
+    "$VENV/bin/pip" install --quiet --upgrade pip >> "$LOG" 2>&1
+    if [ -d "$WHEELS_DIR" ] && [ "$(ls -A "$WHEELS_DIR" 2>/dev/null)" ]; then
+        log "Installing from bundled wheels..."
+        "$VENV/bin/pip" install --quiet \
+            --find-links "$WHEELS_DIR" \
+            --prefer-binary \
+            -r "$INSTALL_DIR/backend/requirements-prod.txt" >> "$LOG" 2>&1
+    else
+        log "No bundled wheels — downloading from PyPI..."
+        "$VENV/bin/pip" install --quiet \
+            -r "$INSTALL_DIR/backend/requirements-prod.txt" >> "$LOG" 2>&1
+    fi
+    log "Dependencies installed."
 fi
-log "Dependencies installed."
 
 state "writing_config"
 
