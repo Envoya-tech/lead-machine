@@ -46,6 +46,21 @@ ROOT    = Path(__file__).resolve().parent.parent   # repo root / extracted archi
 BACKEND = ROOT / "backend"
 DEPLOY  = ROOT / "deploy"
 
+# ── Homebrew PATH injection (macOS) ───────────────────────────────────────────
+# When launched from a .pkg postinstall via osascript, PATH may not include
+# /opt/homebrew/bin. Inject it early so all brew-installed tools are found.
+if platform.system() == "Darwin":
+    _brew_paths = [
+        "/opt/homebrew/bin",
+        "/opt/homebrew/sbin",
+        "/usr/local/bin",
+        "/usr/local/sbin",
+    ]
+    _current_path = os.environ.get("PATH", "")
+    _extra = ":".join(p for p in _brew_paths if p not in _current_path)
+    if _extra:
+        os.environ["PATH"] = _extra + ":" + _current_path
+
 # ── Global state ──────────────────────────────────────────────────────────────
 CFG: dict = {}
 _COMPLETED: list[str] = []   # step summaries shown after screen clear
@@ -239,6 +254,18 @@ def _find_psql() -> str:
             p = Path(rf"C:\Program Files\PostgreSQL\{ver}\bin\psql.exe")
             if p.exists():
                 return str(p)
+    # Check Homebrew explicit paths first (PATH may not include /opt/homebrew/bin)
+    if OS == "Darwin":
+        for p in [
+            "/opt/homebrew/bin/psql",
+            "/opt/homebrew/opt/postgresql@15/bin/psql",
+            "/opt/homebrew/opt/postgresql@16/bin/psql",
+            "/opt/homebrew/opt/postgresql@17/bin/psql",
+            "/usr/local/bin/psql",
+            "/usr/local/opt/postgresql@15/bin/psql",
+        ]:
+            if Path(p).exists():
+                return p
     found = shutil.which("psql")
     return found or "psql"
 
@@ -366,11 +393,25 @@ def _build_frontend_if_needed():
 # ══════════════════════════════════════════════════════════════════════════════
 
 def _pg_isready() -> bool:
-    pg = shutil.which("pg_isready")
-    if pg:
-        return run([pg]).returncode == 0
-    psql = _find_psql()
-    return run([psql, "-U", "postgres", "-c", "SELECT 1", "-d", "postgres"]).returncode == 0
+    try:
+        # Also check Homebrew explicit path for pg_isready
+        pg = shutil.which("pg_isready")
+        if not pg and OS == "Darwin":
+            for p in [
+                "/opt/homebrew/bin/pg_isready",
+                "/opt/homebrew/opt/postgresql@15/bin/pg_isready",
+                "/opt/homebrew/opt/postgresql@16/bin/pg_isready",
+                "/usr/local/bin/pg_isready",
+            ]:
+                if Path(p).exists():
+                    pg = p
+                    break
+        if pg:
+            return run([pg]).returncode == 0
+        psql = _find_psql()
+        return run([psql, "-U", "postgres", "-c", "SELECT 1", "-d", "postgres"]).returncode == 0
+    except FileNotFoundError:
+        return False
 
 def _pg_admin_psql(sql: str, db: str = "postgres") -> subprocess.CompletedProcess:
     psql = _find_psql()
@@ -679,7 +720,7 @@ def is_port_free(port: int) -> bool:
         return s.connect_ex(("localhost", port)) != 0
 
 def check_system():
-    print_step(1, 10, "System Setup")
+    print_step(1, 7, "System Setup")
     passed = True
 
     if OS == "Windows":
@@ -754,65 +795,10 @@ def _parse_license_key(key: str) -> dict | None:
         return None
 
 def activate_license():
-    print_step(2, 10, "License Activation")
-    info("Your license key was included in your purchase confirmation email.\n")
-
-    activation_url = os.environ.get("LM_ACTIVATION_SERVER", "")
-
-    for attempt in range(1, 4):
-        key = ask("License key", secret=True)
-        if not key:
-            if attempt < 3:
-                warn("License key cannot be empty.")
-                continue
-            abort("No license key provided.")
-
-        if activation_url:
-            payload = json.dumps({"key": key, "machine": socket.gethostname()}).encode()
-            req = urllib.request.Request(
-                f"{activation_url.rstrip('/')}/activate", data=payload,
-                headers={"Content-Type": "application/json", "User-Agent": "LeadMachineWizard/2.0"},
-                method="POST",
-            )
-            try:
-                with urllib.request.urlopen(req, timeout=10) as resp:
-                    result = json.loads(resp.read().decode())
-                if result.get("valid"):
-                    ok(f"License valid — {result.get('licensee', 'Unknown')} "
-                       f"({result.get('seats', '?')} seats)")
-                    CFG["license_key"]  = key
-                    CFG["license_info"] = result
-                    _COMPLETED.append("License activated")
-                    return
-                fail(f"Rejected: {result.get('error', 'invalid key')}")
-                if attempt < 3: warn("Please try again."); continue
-                abort("License activation failed.")
-            except Exception:
-                warn("Activation server unreachable — falling back to local check.")
-
-        parsed = _parse_license_key(key)
-        if parsed is None:
-            if len(key) >= 8:
-                warn("Offline validation mode (no activation server configured).")
-                ok(f"License accepted (offline)")
-                CFG["license_key"]  = key
-                CFG["license_info"] = {"licensee": "Offline", "seats": 1, "expiry": "N/A"}
-                _COMPLETED.append("License activated (offline)")
-                return
-            fail("Invalid license key format. Expected: LM-XXXXX-X-XXXXXXXX-XXXX")
-            if attempt < 3: warn("Please try again."); continue
-            continue
-
-        if parsed.get("expired"):
-            abort(f"License expired on {parsed['expiry']}. Renew at https://leadmachine.io/billing")
-
-        ok(f"License valid — {parsed['licensee']} ({parsed['seats']} seats, expires {parsed['expiry']})")
-        CFG["license_key"]  = key
-        CFG["license_info"] = parsed
-        _COMPLETED.append("License activated")
-        return
-
-    abort("Too many failed license attempts.")
+    # License is entered via the web UI after install — skip here
+    ok("License will be activated in the web setup")
+    CFG["license_key"] = ""
+    _COMPLETED.append("License: pending (web UI)")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -820,57 +806,23 @@ def activate_license():
 # ══════════════════════════════════════════════════════════════════════════════
 
 def setup_database():
-    print_step(3, 10, "Database Setup")
+    print_step(3, 7, "Database Setup")
 
-    choice = ask_choice(
-        "Database backend:",
-        ["PostgreSQL  (recommended for production)",
-         "SQLite      (development / single-user)"],
-        default=1,
-    )
-
-    if choice == 2:
-        db_path = ROOT / "data" / "leadmachine.db"
-        db_path.parent.mkdir(parents=True, exist_ok=True)
-        db_url = f"sqlite+aiosqlite:///{db_path}"
-        ok(f"SQLite: {db_path}")
-        CFG.update(db_type="sqlite", db_url=db_url, database_url=db_url)
-        _COMPLETED.append("Database: SQLite")
-        return
-
-    # PostgreSQL
-    print()
+    # Always PostgreSQL — auto-install if needed, no user interaction
     if not _pg_isready():
-        warn("PostgreSQL is not running.")
-        inst = ask("Install and start PostgreSQL automatically?", default="yes")
-        if inst.lower() in ("yes", "y"):
-            install_postgresql()
-            time.sleep(3)
-            if not _pg_isready():
-                abort("PostgreSQL still not responding. Check your installation.")
-        else:
-            abort("PostgreSQL is required. Aborting.")
+        install_postgresql()
+        time.sleep(3)
+        if not _pg_isready():
+            abort("PostgreSQL could not be started. Check your installation.")
     else:
         ok("PostgreSQL is running")
 
-    print()
-    db_name = ask("Database name",     default="leadmachine")
-    db_user = ask("Database user",     default="leadmachine")
-    db_pass = ask("Database password", secret=True)
-    if not db_pass:
-        db_pass = secrets.token_hex(16)
-        info(f"Auto-generated password — save this: {db_pass}")
+    db_name = "leadmachine"
+    db_user = "leadmachine"
+    db_pass = secrets.token_hex(16)
 
     _create_pg_db(db_name, db_user, db_pass)
-    ok(f"Database '{db_name}' created")
-
-    # Quick connection test
-    psql = _find_psql()
-    test = run([psql, f"postgresql://{db_user}:{db_pass}@localhost:5432/{db_name}", "-c", "SELECT 1"])
-    if test.returncode == 0:
-        ok("Database connection verified")
-    else:
-        warn("Connection test failed — verify credentials manually after install.")
+    ok(f"Database ready")
 
     db_url = f"postgresql+asyncpg://{db_user}:{db_pass}@localhost:5432/{db_name}"
     CFG.update(db_type="postgresql", db_url=db_url, database_url=db_url,
@@ -1008,18 +960,18 @@ def configure_api_keys():
         info("Set LLM_PROVIDER / LLM_API_KEY / LLM_MODEL in backend/.env after install.")
 
     print()
+    print()
+    info("Optional integrations:")
+
     # ── Apollo ────────────────────────────────────────────────────────────────
-    _prompt_key("Apollo.io API key", "APOLLO_API_KEY", required=True,
+    _prompt_key("Apollo.io API key", "APOLLO_API_KEY", required=False,
                 validator=_test_apollo_key,
                 hint="Get yours at: https://developer.apollo.io")
 
     # ── Brave Search ──────────────────────────────────────────────────────────
-    _prompt_key("Brave Search API key", "BRAVE_SEARCH_API_KEY", required=True,
+    _prompt_key("Brave Search API key", "BRAVE_SEARCH_API_KEY", required=False,
                 validator=_test_brave_key,
                 hint="Get yours at: https://api.search.brave.com/app/keys")
-
-    print()
-    info("Optional integrations:")
 
     # ── Telegram ──────────────────────────────────────────────────────────────
     _prompt_key("Telegram bot token", "TELEGRAM_BOT_TOKEN", required=False,
@@ -1056,37 +1008,10 @@ def _telegram_test(token: str, chat_id: str):
 # ══════════════════════════════════════════════════════════════════════════════
 
 def create_admin():
-    print_step(5, 10, "Admin Account")
-    info("Create the first administrator account for Lead Machine.\n")
-
-    name = ask("Your full name", default="Admin")
-    while not name:
-        warn("Name cannot be empty.")
-        name = ask("Your full name", default="Admin")
-
-    email = ask("Email address")
-    while not email or "@" not in email:
-        warn("Please enter a valid email address.")
-        email = ask("Email address")
-
-    default_un = email.split("@")[0].lower().replace(".", "_")
-    username = ask("Username", default=default_un)
-
-    while True:
-        password = ask("Password (12+ characters)", secret=True)
-        if len(password) < 12:
-            warn("Password must be at least 12 characters.")
-            continue
-        confirm = ask("Confirm password", secret=True)
-        if password != confirm:
-            warn("Passwords do not match — please try again.")
-            continue
-        break
-
-    ok(f"Admin account ready: {name} <{email}>")
-    CFG.update(admin_name=name, admin_email=email,
-               admin_username=username, admin_password=password)
-    _COMPLETED.append(f"Admin: {email}")
+    # Admin account is created via the web UI — skip here
+    ok("Admin account will be created in the web setup")
+    CFG.update(admin_name="", admin_email="", admin_username="", admin_password="")
+    _COMPLETED.append("Admin: pending (web UI)")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1094,7 +1019,7 @@ def create_admin():
 # ══════════════════════════════════════════════════════════════════════════════
 
 def configure_domain():
-    print_step(6, 10, "Domain & URL")
+    # removed
     info("This is the URL where you'll access Lead Machine.\n")
     info("Examples:")
     info("  https://leadmachine.yourcompany.com")
@@ -1133,7 +1058,19 @@ def configure_domain():
 # ══════════════════════════════════════════════════════════════════════════════
 
 def write_config():
-    print_step(7, 10, "Writing Configuration")
+    print_step(5, 7, "Writing Configuration")
+
+    # Default URL — no domain step, always localhost:8080
+    if "app_url" not in CFG:
+        CFG["app_url"]   = "http://localhost:8080"
+        CFG["use_https"] = False
+
+    # Ensure Caddy is installed
+    if not shutil.which("caddy"):
+        install_caddy()
+    else:
+        ok("Caddy is installed")
+    generate_caddyfile(ROOT, CFG["app_url"])
 
     llm_api = CFG.get("LLM_API_KEY", CFG.get("ANTHROPIC_API_KEY", ""))
     env = f"""# Lead Machine — Backend Configuration
@@ -1146,8 +1083,8 @@ FIRST_RUN=false
 
 DATABASE_URL={CFG.get('database_url', 'sqlite+aiosqlite:///./data/leadmachine.db')}
 
-CORS_ORIGINS={CFG.get('app_url', 'http://localhost')}
-APP_URL={CFG.get('app_url', 'http://localhost')}
+CORS_ORIGINS={CFG.get('app_url', 'http://localhost:8080')}
+APP_URL={CFG.get('app_url', 'http://localhost:8080')}
 
 LLM_PROVIDER={CFG.get('llm_provider', '')}
 LLM_MODEL={CFG.get('llm_model', '')}
@@ -1219,7 +1156,7 @@ def step_setup_venv(install_dir: Path) -> Path:
     return python
 
 def init_database():
-    print_step(8, 10, "Installing & Setting Up")
+    print_step(6, 7, "Installing & Setting Up")
 
     # venv
     venv_python = step_setup_venv(ROOT)
@@ -1266,18 +1203,8 @@ def _inline_create_all(python: Path, env: dict):
         tmp.unlink(missing_ok=True)
 
 def _seed_admin(python: Path, env: dict):
-    seed_script = BACKEND / "seed_admin.py"
-    if seed_script.exists():
-        res = run_with_spinner(
-            "Creating admin account",
-            [str(python), "seed_admin.py",
-             CFG["admin_username"], CFG["admin_password"], CFG["admin_email"]],
-            cwd=BACKEND, env=env, timeout=60, fatal=False,
-        )
-        if res.returncode != 0:
-            ok("Admin account (already exists — skipped)")
-    else:
-        _seed_admin_inline(python, env)
+    # Admin account is created via the web UI on first run — skip seeding here
+    ok("Admin account: will be created via web setup")
 
 def _seed_admin_inline(python: Path, env: dict):
     code = f"""import asyncio,sys,os
@@ -1409,7 +1336,7 @@ def _wait_for_http(url: str, timeout: int = 90, interval: int = 3) -> bool:
     return False
 
 def start_services():
-    print_step(9, 10, "Starting Services")
+    print_step(7, 7, "Starting Services")
 
     venv_dir = Path(CFG.get("_venv_dir", str(BACKEND / ".venv")))
     app_url  = CFG.get("app_url", "http://localhost")
@@ -1455,50 +1382,28 @@ def start_services():
 # ══════════════════════════════════════════════════════════════════════════════
 
 def finish():
-    print_step(10, 10, "Installation Complete")
+    print_step(7, 7, "Installation Complete")
 
-    url      = CFG.get("app_url", "http://localhost")
-    username = CFG.get("admin_username", "admin")
-    email    = CFG.get("admin_email", "")
+    setup_url = "http://localhost:8080/setup"
+    ok("Installation complete — opening Lead Machine in your browser…")
 
-    print(f"\n  {BOLD}{GREEN}╔══════════════════════════════════════════════════════╗{RESET}")
-    print(f"  {BOLD}{GREEN}║   🚀  Lead Machine is ready!                         ║{RESET}")
-    print(f"  {BOLD}{GREEN}╚══════════════════════════════════════════════════════╝{RESET}\n")
-    print(f"  {BOLD}Open in browser:{RESET}  {CYAN}{url}{RESET}")
-    if url != "http://localhost:8080":
-        print(f"  {BOLD}Local fallback: {RESET}  {CYAN}http://localhost:8080{RESET}")
-    print(f"  {BOLD}Username:       {RESET}  {username}")
-    if email:
-        print(f"  {BOLD}Email:          {RESET}  {email}")
-    print(f"  {BOLD}Password:       {RESET}  {DIM}(as entered during setup){RESET}")
-    print()
-    print(f"  {DIM}Docs:    https://docs.leadmachine.io{RESET}")
-    print(f"  {DIM}Support: support@leadmachine.io{RESET}")
-    print()
-
-    info("Useful commands:")
-    if OS == "Darwin":
-        print(f"    {DIM}Logs:    {RESET}tail -f ~/Library/Logs/LeadMachine/backend.log")
-        print(f"    {DIM}Restart: {RESET}launchctl kickstart -k gui/$UID/com.leadmachine.backend")
-        print(f"    {DIM}Stop:    {RESET}launchctl unload ~/Library/LaunchAgents/com.leadmachine.backend.plist")
-    elif OS == "Linux":
-        print(f"    {DIM}Logs:    {RESET}journalctl --user -u leadmachine-backend -f")
-        print(f"    {DIM}Restart: {RESET}systemctl --user restart leadmachine-backend leadmachine-caddy")
-        print(f"    {DIM}Stop:    {RESET}systemctl --user stop leadmachine-backend leadmachine-caddy")
-    elif OS == "Windows":
-        print(f"    {DIM}Logs:    {RESET}type %LOCALAPPDATA%\\LeadMachine\\logs\\backend.log")
-        print(f"    {DIM}Restart: {RESET}nssm restart LeadMachineBackend")
-        print(f"    {DIM}Stop:    {RESET}nssm stop LeadMachineBackend")
-    print()
+    # Wait for backend to be ready, then open /setup
+    for _ in range(60):
+        try:
+            import urllib.request
+            urllib.request.urlopen("http://localhost:8000/health", timeout=2)
+            break
+        except Exception:
+            time.sleep(3)
 
     if OS == "Darwin":
         try:
-            subprocess.Popen(["open", url])
+            subprocess.Popen(["open", setup_url])
         except Exception:
             pass
     elif OS == "Windows":
         try:
-            os.startfile(url)  # type: ignore[attr-defined]
+            os.startfile(setup_url)  # type: ignore[attr-defined]
         except Exception:
             pass
 
@@ -1508,28 +1413,16 @@ def finish():
 # ══════════════════════════════════════════════════════════════════════════════
 
 def main():
-    _clear()
-    _banner()
-    print(f"\n  {BOLD}Lead Machine Setup Wizard{RESET}")
-    print(f"  Platform: {BOLD}{OS}{RESET} {platform.release()} — {ROOT}")
-    print()
-    print(f"  {YELLOW}╔══════════════════════════════════════════════════════╗{RESET}")
-    print(f"  {YELLOW}║  Fresh install?  Sit back — this takes ~15 minutes. ║{RESET}")
-    print(f"  {YELLOW}║  All heavy lifting happens automatically.            ║{RESET}")
-    print(f"  {YELLOW}╚══════════════════════════════════════════════════════╝{RESET}")
-    print(f"\n  {DIM}Press Ctrl+C at any time to cancel.{RESET}\n")
-    input(f"  Press {BOLD}Enter{RESET} to begin…")
-
+    # Fully silent — no prompts, no interaction.
+    # License + admin setup happens in the web UI at http://localhost:8080/setup
     check_system()        # 1
-    activate_license()    # 2
+    activate_license()    # 2 (no-op — deferred to web UI)
     setup_database()      # 3
-    configure_api_keys()  # 4
-    create_admin()        # 5
-    configure_domain()    # 6
-    write_config()        # 7
-    init_database()       # 8
-    start_services()      # 9
-    finish()              # 10
+    create_admin()        # 4 (no-op — deferred to web UI)
+    write_config()        # 5
+    init_database()       # 6
+    start_services()      # 7
+    finish()              # 7
 
 
 if __name__ == "__main__":

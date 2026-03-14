@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Installing Lead Machine…</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+    background: #0F172A;
+    color: #e2e8f0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    padding: 40px 20px;
+  }
+  .logo {
+    font-size: 48px;
+    font-weight: 800;
+    letter-spacing: -2px;
+    color: #6366F1;
+    margin-bottom: 8px;
+  }
+  .tagline {
+    font-size: 14px;
+    color: #64748b;
+    margin-bottom: 48px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+  .card {
+    background: #111827;
+    border: 1px solid #1e293b;
+    border-radius: 16px;
+    padding: 36px 44px;
+    max-width: 520px;
+    width: 100%;
+    text-align: center;
+  }
+  .spinner {
+    width: 44px; height: 44px;
+    border: 3px solid #1e293b;
+    border-top-color: #6366F1;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin: 0 auto 24px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  h2 {
+    font-size: 20px;
+    font-weight: 600;
+    color: #f1f5f9;
+    margin-bottom: 6px;
+  }
+  .subtitle {
+    font-size: 13px;
+    color: #64748b;
+    line-height: 1.6;
+    margin-bottom: 28px;
+  }
+  .steps {
+    text-align: left;
+    list-style: none;
+  }
+  .steps li {
+    padding: 10px 0;
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    border-bottom: 1px solid #1e293b;
+  }
+  .steps li:last-child { border-bottom: none; }
+  .dot-wrap {
+    padding-top: 2px;
+    flex-shrink: 0;
+  }
+  .dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: #1e293b;
+    margin-top: 3px;
+  }
+  .step-text { flex: 1; }
+  .step-label {
+    font-size: 13px;
+    font-weight: 500;
+    color: #475569;
+  }
+  .step-desc {
+    font-size: 11px;
+    color: #334155;
+    margin-top: 2px;
+    line-height: 1.5;
+  }
+
+  /* States */
+  .done   .dot { background: #22c55e; }
+  .done   .step-label { color: #22c55e; }
+  .done   .step-desc  { color: #166534; }
+
+  .active .dot { background: #6366F1; animation: pulse 1s ease-in-out infinite; }
+  .active .step-label { color: #818cf8; font-weight: 600; }
+  .active .step-desc  { color: #4338ca; }
+
+  @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
+
+  .elapsed {
+    margin-top: 20px;
+    font-size: 11px;
+    color: #334155;
+  }
+  .footer {
+    margin-top: 28px;
+    font-size: 12px;
+    color: #1e293b;
+  }
+</style>
+</head>
+<body>
+
+<div class="logo">Lead Machine</div>
+<div class="tagline">by Envoya</div>
+
+<div class="card">
+  <div class="spinner" id="spinner"></div>
+  <h2 id="main-title">Setting things up…</h2>
+  <p class="subtitle" id="main-sub">
+    This window is safe to leave open.<br>
+    Lead Machine will open automatically when ready.
+  </p>
+
+  <ul class="steps" id="steps">
+    <li id="s-homebrew">
+      <div class="dot-wrap"><div class="dot"></div></div>
+      <div class="step-text">
+        <div class="step-label">Installing system dependencies</div>
+        <div class="step-desc">Homebrew + Xcode Command Line Tools — this is the slowest part, can take 5–10 minutes on a fresh Mac. Your machine is not frozen.</div>
+      </div>
+    </li>
+    <li id="s-python">
+      <div class="dot-wrap"><div class="dot"></div></div>
+      <div class="step-text">
+        <div class="step-label">Setting up Python environment</div>
+        <div class="step-desc">Installing Python 3.11 and creating an isolated virtual environment for Lead Machine.</div>
+      </div>
+    </li>
+    <li id="s-postgres">
+      <div class="dot-wrap"><div class="dot"></div></div>
+      <div class="step-text">
+        <div class="step-label">Installing database</div>
+        <div class="step-desc">Downloading and installing PostgreSQL — the database that stores your leads and campaigns.</div>
+      </div>
+    </li>
+    <li id="s-database">
+      <div class="dot-wrap"><div class="dot"></div></div>
+      <div class="step-text">
+        <div class="step-label">Creating database</div>
+        <div class="step-desc">Setting up the Lead Machine database and initialising its structure.</div>
+      </div>
+    </li>
+    <li id="s-deps">
+      <div class="dot-wrap"><div class="dot"></div></div>
+      <div class="step-text">
+        <div class="step-label">Installing application</div>
+        <div class="step-desc">Downloading Lead Machine's Python packages and applying database migrations.</div>
+      </div>
+    </li>
+    <li id="s-services">
+      <div class="dot-wrap"><div class="dot"></div></div>
+      <div class="step-text">
+        <div class="step-label">Starting services</div>
+        <div class="step-desc">Launching the backend server and web proxy. These will run automatically every time you log in.</div>
+      </div>
+    </li>
+    <li id="s-ready">
+      <div class="dot-wrap"><div class="dot"></div></div>
+      <div class="step-text">
+        <div class="step-label">Almost ready…</div>
+        <div class="step-desc">Waiting for Lead Machine to respond — this usually takes a few seconds.</div>
+      </div>
+    </li>
+  </ul>
+
+  <div class="elapsed" id="elapsed"></div>
+</div>
+
+<div class="footer" id="footer">Lead Machine will open automatically when ready.</div>
+
+<script>
+const STEP_ORDER = ['s-homebrew','s-python','s-postgres','s-database','s-deps','s-services','s-ready'];
+
+function markSteps(currentId) {
+  const idx = STEP_ORDER.indexOf(currentId);
+  STEP_ORDER.forEach((id, i) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.classList.remove('done','active');
+    if (i < idx)  el.classList.add('done');
+    if (i === idx) el.classList.add('active');
+  });
+}
+
+// Elapsed timer
+const startTime = Date.now();
+setInterval(() => {
+  const secs = Math.floor((Date.now() - startTime) / 1000);
+  const m = Math.floor(secs / 60), s = secs % 60;
+  document.getElementById('elapsed').textContent =
+    `Time elapsed: ${m}:${s.toString().padStart(2,'0')}`;
+}, 1000);
+
+// Health check — redirect when backend is up
+async function checkBackend() {
+  try {
+    const r = await fetch('http://localhost:8000/health', { signal: AbortSignal.timeout(3000) });
+    if (r.ok) {
+      markSteps('s-ready');
+      document.querySelector('h2').textContent = '✓ Ready!';
+      document.getElementById('main-sub').textContent = 'Opening Lead Machine now…';
+      document.getElementById('spinner').style.borderTopColor = '#22c55e';
+      document.getElementById('spinner').style.borderColor = '#14532d';
+      document.getElementById('spinner').style.borderTopColor = '#22c55e';
+      document.getElementById('footer').textContent = '';
+      setTimeout(() => { window.location.href = 'http://localhost:8080/setup'; }, 1500);
+      return true;
+    }
+  } catch (_) {}
+  return false;
+}
+
+// Animate steps as time passes
+const STEP_TIMINGS = [0, 60, 120, 200, 260, 320, 370]; // seconds into install
+let stepIdx = 0;
+function animateByTime() {
+  const elapsed = (Date.now() - startTime) / 1000;
+  let newIdx = 0;
+  for (let i = 0; i < STEP_TIMINGS.length; i++) {
+    if (elapsed >= STEP_TIMINGS[i]) newIdx = i;
+  }
+  if (newIdx !== stepIdx) {
+    stepIdx = newIdx;
+    markSteps(STEP_ORDER[Math.min(stepIdx, STEP_ORDER.length - 2)]);
+  }
+}
+
+// Start
+markSteps(STEP_ORDER[0]);
+setInterval(animateByTime, 5000);
+setTimeout(function poll() {
+  checkBackend().then(done => { if (!done) setTimeout(poll, 4000); });
+}, 8000);
+</script>
+
+</body>
+</html>
